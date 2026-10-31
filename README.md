@@ -43,7 +43,7 @@ This project delivers an **AI Academic Assistant** that:
 - **Student Answer Auto-Grader**: Analyzes student answers, scores each rubric component, calculates total marks and percentage, assigns VTU letter grades (O, A+, A, B+, B, C, F), highlights missing concepts, and gives examiner tips.
 - **Auto Question Paper & Revision Blueprint**: Extracts high-probability 2M, 5M, 10M, and 15M questions from uploaded documents.
 - **Dual-Mode Operation**:
-  - **Online Mode**: Uses Google Gemini API (`gemini-2.5-flash`, `gemini-2.5-pro`).
+  - **Online Mode**: Uses Google Gemini API (`gemini-3.8-flash`).
   - **Offline / Autonomous Mode**: Built-in academic knowledge synthesis engine that runs without requiring an internet connection or API key during lab vivas.
 
 ---
