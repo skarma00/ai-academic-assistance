@@ -526,7 +526,7 @@ if "active_doc_ids" not in st.session_state:
 sample_pdf_path = UPLOADS_DIR / "Sample_Operating_Systems_Notes.pdf"
 
 # Document Ingestion Helper
-def process_uploaded_files(files, replace=True, api_key=None, model="gemini-2.5-flash"):
+def process_uploaded_files(files, replace=True, api_key=None, model="gemini-3.8-flash"):
     processor = AcademicPDFProcessor()
     new_chunks = []
     new_metadata = []
@@ -590,7 +590,7 @@ def load_sample_demo_mode():
         
         bp_engine = AcademicBlueprintEngine(
             api_key=os.getenv("GEMINI_API_KEY"),
-            model_name="gemini-2.5-flash"
+            model_name="gemini-3.8-flash"
         )
         st.session_state.blueprint_data = bp_engine.generate_blueprint(
             st.session_state.doc_metadata,
