@@ -141,9 +141,7 @@ def calibrate_scheme_components(components_list: list, target_marks: float) -> l
 
 # Supported LLM Models
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-1.5-flash"
+    "gemini-3.8-flash"
 ]
 
 # SIT/VTU University Configured Grading Scale
