@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from config import MARK_SCHEMES, GEMINI_MODELS, calibrate_scheme_components
 from diagram_engine import DiagramEngine
 from structured_output import StructuredOutputPipeline
+from gemini_client import generate_text
 
 NOT_ENOUGH_INFO_MSG = "The uploaded PDF does not contain enough relevant information to answer this question."
 
@@ -22,7 +23,7 @@ class AcademicAnswerGenerator:
     Transforms raw extracted text into structured, typed, user-friendly responses.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model_name = model_name
 
@@ -92,9 +93,6 @@ class AcademicAnswerGenerator:
 
     def _generate_with_gemini(self, question: str, marks: int, context_text: str, 
                               scheme_template: Dict, diagram_needed: bool) -> Optional[Dict[str, Any]]:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model_name)
 
         system_prompt = f"""
 You are an expert Academic Professor and Chief Paper Evaluator in Computer Science and Engineering at Siddaganga Institute of Technology (SIT) / VTU.
@@ -179,13 +177,10 @@ CONTEXT FROM ACADEMIC MATERIALS:
 QUESTION: {question}
 """
 
-        response = model.generate_content(
-            system_prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
+        response_text = generate_text(system_prompt, self.api_key, self.model_name, json_mode=True)
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(response_text)
             
             # Check for lack of information
             if data.get("answer_markdown") == NOT_ENOUGH_INFO_MSG:
@@ -216,8 +211,8 @@ QUESTION: {question}
                     # Retry once to fix syntax error
                     try:
                         retry_prompt = f"The previous Mermaid diagram had syntax errors: {err_msg}.\nOriginal Code:\n{diagram_code}\nPlease fix the Mermaid syntax. Return ONLY valid Mermaid code, or an empty string if context cannot support it."
-                        retry_res = model.generate_content(retry_prompt)
-                        cleaned_retry = DiagramEngine.sanitize_mermaid_code(retry_res.text)
+                        retry_text = generate_text(retry_prompt, self.api_key, self.model_name)
+                        cleaned_retry = DiagramEngine.sanitize_mermaid_code(retry_text)
                         is_valid2, _ = DiagramEngine.validate_mermaid_syntax(cleaned_retry)
                         if is_valid2:
                             data["diagram_code"] = cleaned_retry
