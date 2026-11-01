@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from config import MARK_SCHEMES, calibrate_scheme_components, calculate_grade
+from gemini_client import generate_text
 
 STOP_WORDS = {
     "what", "is", "explain", "describe", "discuss", "with", "neat", "diagram",
@@ -148,7 +149,7 @@ class StudentAnswerEvaluator:
     Expected Answer Points = Marks Allotted × 2
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model_name = model_name
 
@@ -239,9 +240,6 @@ class StudentAnswerEvaluator:
     def _evaluate_with_gemini(self, question: str, target_marks: float, expected_points: int, q_type: str,
                               student_answer: str, calibrated_components: List[Dict[str, Any]], 
                               model_answer: str) -> Optional[Dict[str, Any]]:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model_name)
 
         rubric_str = json.dumps(calibrated_components, indent=2)
 
@@ -316,14 +314,13 @@ Return ONLY a JSON object strictly conforming to this schema:
     "examiner_feedback": "Actionable, constructive guidance on how to improve this answer to achieve full marks."
 }}
 """
-        response = model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
+        response_text = generate_text(prompt, self.api_key, self.model_name, json_mode=True)
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(response_text)
             raw_evals = data.get("component_evaluations", [])
+            if not isinstance(raw_evals, list) or len(raw_evals) != len(calibrated_components):
+                return None
             calibrated_evals = []
             marks_breakdown = []
 
@@ -331,7 +328,7 @@ Return ONLY a JSON object strictly conforming to this schema:
                 target_alloc = float(target_c.get("marks", 1.0))
                 if i < len(raw_evals):
                     ev_item = raw_evals[i]
-                    crit_name = ev_item.get("criterion", target_c.get("component", f"Criterion {i+1}"))
+                    crit_name = target_c.get("component", f"Criterion {i+1}")
                     awarded_raw = float(ev_item.get("marks_awarded", 0.0))
                     gemini_alloc = float(ev_item.get("allocated_marks", target_alloc))
                     if gemini_alloc > 0:
@@ -348,10 +345,7 @@ Return ONLY a JSON object strictly conforming to this schema:
                         status = "Missing"
                     comments = ev_item.get("comments", f"Awarded {awarded_norm}/{target_alloc} marks.")
                 else:
-                    crit_name = target_c.get("component", f"Criterion {i+1}")
-                    awarded_norm = round(target_alloc * 0.5, 1)
-                    status = "Partially Satisfied"
-                    comments = f"Awarded {awarded_norm}/{target_alloc} marks."
+                    return None
 
                 calibrated_evals.append({
                     "criterion": crit_name,

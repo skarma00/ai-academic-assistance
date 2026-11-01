@@ -29,9 +29,16 @@ importlib.reload(structured_output)
 
 from config import PROJECT_INFO, MARK_SCHEMES, UPLOADS_DIR, GEMINI_MODELS
 from database import (
-    init_db, save_document_record, list_documents,
-    save_generated_answer, list_recent_answers,
-    save_evaluation, list_recent_evaluations
+    init_db,
+    save_document_record,
+    list_documents,
+    save_generated_answer,
+    list_recent_answers,
+    save_evaluation,
+    list_recent_evaluations,
+    create_user,
+    create_teacher_user,
+    authenticate_user
 )
 from pdf_processor import AcademicPDFProcessor
 from rag_engine import AcademicRAGEngine
@@ -55,433 +62,1031 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Global Theme & Typography */
-    :root {
-        --primary-blue: #2563eb;
-        --primary-blue-hover: #1d4ed8;
-        --primary-blue-light: #eff6ff;
-        --lavender-accent: #7c3aed;
-        --lavender-light: #ede9fe;
-        --lavender-tint: #f5f3ff;
-        --text-navy: #0f172a;
-        --text-slate: #1e293b;
-        --text-muted: #64748b;
-        --bg-page: #f8fafc;
-        --bg-surface: #ffffff;
-        --border-light: #e2e8f0;
-        --border-dashed: #cbd5e1;
-        --radius-sm: 6px;
-        --radius-md: 10px;
-        --radius-lg: 14px;
-        --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.05);
-        --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.05);
-    }
+  :root {
+    --primary-blue: #648B75;
+    --primary-blue-hover: #496F5A;
+    --primary-blue-light: #E6F3EA;
 
-    html, body, [data-testid="stAppViewContainer"] {
-        background-color: var(--bg-page);
-        color: var(--text-slate);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
-        -webkit-font-smoothing: antialiased;
-    }
+    --lavender-accent: #9277B5;
+    --lavender-light: #EEE8FA;
+    --lavender-tint: #F7F3FC;
 
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid var(--border-light);
-    }
+    --text-navy: #344B40;
+    --text-slate: #46564D;
+    --text-muted: #829087;
 
-    /* Polished Header with Logo */
-    .sg-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px 22px;
-        background: var(--bg-surface);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-lg);
-        margin-bottom: 20px;
-        box-shadow: var(--shadow-sm);
-        transition: all 0.2s ease;
-    }
-    .sg-header-left {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-    }
-    .sg-logo-icon {
-        width: 44px;
-        height: 44px;
-        background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%);
-        color: #2563eb;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid #dbeafe;
-        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.1);
-        flex-shrink: 0;
-    }
-    .sg-header-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--text-navy);
-        letter-spacing: -0.4px;
-        line-height: 1.2;
-    }
-    .sg-header-subtitle {
-        font-size: 13px;
-        color: var(--text-muted);
-        font-weight: 500;
-        margin-top: 2px;
-    }
-    .sg-header-badges {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-    }
-    .sg-header-pill {
-        padding: 5px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-    }
-    .sg-pill-lavender {
-        background: var(--lavender-tint);
-        color: var(--lavender-accent);
-        border: 1px solid var(--lavender-light);
-    }
-    .sg-pill-blue {
-        background: var(--primary-blue-light);
-        color: var(--primary-blue);
-        border: 1px solid #bfdbfe;
-    }
+    --bg-page: #F8F8F4;
+    --bg-surface: #FFFFFF;
+    
 
-    /* Welcome Hero Card */
-    .sg-welcome-card {
-        background: var(--bg-surface);
-        border: 1px solid var(--border-light);
-        border-top: 3.5px solid #2563eb;
-        border-radius: var(--radius-lg);
-        padding: 24px 28px;
-        margin-bottom: 22px;
-        box-shadow: var(--shadow-sm);
-    }
-    .sg-welcome-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: var(--lavender-tint);
-        color: var(--lavender-accent);
-        padding: 4px 11px;
-        border-radius: 14px;
-        font-size: 11.5px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 10px;
-        border: 1px solid var(--lavender-light);
-    }
-    .sg-welcome-heading {
-        font-size: 24px;
-        font-weight: 700;
-        color: var(--text-navy);
-        margin: 0 0 8px 0;
-        letter-spacing: -0.4px;
-    }
-    .sg-welcome-desc {
-        font-size: 14.5px;
-        color: #475569;
-        margin: 0 0 16px 0;
-        line-height: 1.6;
-        max-width: 860px;
-    }
-    .sg-feature-strip {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 14px;
-    }
-    .sg-feature-item {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12.5px;
-        font-weight: 500;
-        color: #334155;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        padding: 5px 12px;
-        border-radius: var(--radius-sm);
-    }
+    --border-light: #E8EAE3;
+    --border-dashed: #C8D8CC;
 
-    /* Modern Panel Containers */
-    .sg-panel {
-        background: var(--bg-surface);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-lg);
-        padding: 22px 26px;
-        margin-bottom: 20px;
-        box-shadow: var(--shadow-sm);
-        transition: box-shadow 0.2s ease, border-color 0.2s ease;
-    }
-    .sg-panel:hover {
-        border-color: #cbd5e1;
-        box-shadow: var(--shadow-md);
-    }
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
 
-    /* Section Header Rows */
-    .sg-section-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-    }
-    .sg-icon-box {
-        width: 36px;
-        height: 36px;
-        border-radius: 9px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-    .sg-icon-blue {
-        background: var(--primary-blue-light);
-        color: var(--primary-blue);
-        border: 1px solid #dbeafe;
-    }
-    .sg-icon-lavender {
-        background: var(--lavender-tint);
-        color: var(--lavender-accent);
-        border: 1px solid var(--lavender-light);
-    }
-    .sg-section-title {
-        font-size: 16.5px;
-        font-weight: 600;
-        color: var(--text-navy);
-        line-height: 1.2;
-    }
-    .sg-section-subtitle {
-        font-size: 13px;
-        color: var(--text-muted);
-        margin-top: 2px;
-    }
+    --shadow-sm: 0 2px 8px rgba(52, 75, 64, 0.04);
+    --shadow-md: 0 5px 16px rgba(52, 75, 64, 0.07);
+} 
 
-    /* Upload Dropzone Container */
-    .sg-upload-dropzone {
-        border: 2px dashed var(--border-dashed);
-        border-radius: var(--radius-md);
-        background: #fafbfe;
-        padding: 16px 20px;
-        margin-bottom: 14px;
-        transition: all 0.2s ease;
-    }
-    .sg-upload-dropzone:hover {
-        border-color: #3b82f6;
-        background: #f0f7ff;
-    }
+/* Dashboard Header */
+.sg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 18px 22px;
+    margin-bottom: 22px;
+    background: #FFFFFF;
+    border: 1px solid #E8EAE3;
+    border-radius: 18px;
+    box-shadow: 0 3px 12px rgba(52, 75, 64, 0.05);
+}
 
-    /* Upload Status Banners */
-    .sg-status-active {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-left: 4px solid #16a34a;
-        border-radius: var(--radius-sm);
-        padding: 12px 16px;
-        margin-top: 10px;
-    }
-    .sg-status-left {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .sg-status-title {
-        font-size: 13.5px;
-        font-weight: 600;
-        color: #166534;
-    }
-    .sg-status-meta {
-        font-size: 12.5px;
-        color: #15803d;
-        margin-top: 2px;
-    }
-    .sg-status-badge {
-        background: #dcfce7;
-        color: #166534;
-        border: 1px solid #86efac;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-    .sg-status-idle {
-        background: #fafbfe;
-        border: 1px dashed var(--border-dashed);
-        border-radius: var(--radius-sm);
-        padding: 12px 16px;
-        margin-top: 10px;
-        font-size: 13px;
-        color: var(--text-muted);
-    }
+.sg-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
 
-    /* Marks Info Pill */
-    .sg-marks-info {
-        background: linear-gradient(135deg, #f8fafc 0%, #f5f3ff 100%);
-        border: 1px solid #e2e8f0;
-        border-radius: var(--radius-sm);
-        padding: 8px 14px;
-        font-size: 13px;
-        color: #334155;
-        margin-top: 26px;
-    }
+.sg-logo-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #E6F3EA, #EEE8FA);
+    color: #648B75;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #DCE9DF;
+    box-shadow: 0 2px 5px rgba(100, 139, 117, 0.10);
+    flex-shrink: 0;
+}
 
-    /* Answer Display Panel */
-    .sg-answer-panel {
-        background: #fcfdfe;
-        border: 1px solid #e2e8f0;
-        border-radius: var(--radius-lg);
-        padding: 26px 30px;
-        margin-top: 22px;
-        box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.05);
-    }
-    .sg-answer-bar {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding-bottom: 14px;
-        border-bottom: 1px solid #e2e8f0;
-        margin-bottom: 18px;
-    }
-    .sg-answer-heading {
-        font-size: 20px;
-        font-weight: 700;
-        color: var(--text-navy);
-    }
-    .sg-answer-sub {
-        font-size: 13.5px;
-        color: var(--text-muted);
-        margin-top: 3px;
-    }
-    .sg-answer-tags {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-    .sg-tag {
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .sg-tag-blue {
-        background: var(--primary-blue-light);
-        color: var(--primary-blue);
-        border: 1px solid #bfdbfe;
-    }
-    .sg-tag-lavender {
-        background: var(--lavender-tint);
-        color: var(--lavender-accent);
-        border: 1px solid var(--lavender-light);
-    }
+.sg-header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #344B40;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+}
 
-    /* Scorecard for Evaluation */
-    .sg-scorecard {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-left: 5px solid #2563eb;
-        border-radius: var(--radius-md);
-        padding: 18px 22px;
-        margin-bottom: 18px;
-        box-shadow: var(--shadow-sm);
-    }
-    .sg-score-title {
-        font-size: 21px;
-        font-weight: 700;
-        color: var(--text-navy);
-        margin: 0;
-    }
-    .sg-score-meta {
-        font-size: 14px;
-        color: #475569;
-        margin-top: 4px;
-    }
+.sg-header-subtitle {
+    font-size: 13px;
+    color: #829087;
+    font-weight: 500;
+    margin-top: 2px;
+}
 
-    /* Citations Box */
-    .sg-source-item {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: var(--radius-sm);
-        padding: 12px 14px;
-        margin-bottom: 10px;
-        font-size: 13px;
-    }
+.sg-header-badges {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
 
-    /* Blueprint Card */
-    .sg-blueprint-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: var(--radius-sm);
-        padding: 12px 14px;
-        margin-bottom: 10px;
-        transition: all 0.15s ease;
-    }
-    .sg-blueprint-card:hover {
-        border-color: #93c5fd;
-        background: #fafcff;
-    }
+.sg-header-pill {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
 
-    /* Buttons Styling */
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
-        border: 1px solid #1d4ed8 !important;
-        color: #ffffff !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        font-size: 14.5px !important;
-        padding: 8px 22px !important;
-        box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25) !important;
-        transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%) !important;
-        box-shadow: 0 4px 8px rgba(37, 99, 235, 0.35) !important;
-        transform: translateY(-1px) !important;
-    }
-    .stButton > button {
-        border-radius: 8px !important;
-        font-weight: 500 !important;
-        transition: all 0.15s ease !important;
-    }
+.sg-pill-lavender {
+    background: #F7F3FC;
+    color: #9277B5;
+    border: 1px solid #EEE8FA;
+}
 
-    /* Streamlit Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 1px solid var(--border-light);
-        padding-bottom: 2px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        font-size: 14px;
-        font-weight: 500;
-        color: #475569;
-        padding: 8px 18px;
-        border-radius: 8px 8px 0 0;
-        border: none;
-        background: transparent;
-        transition: all 0.15s ease;
-    }
-    .stTabs [data-baseweb="tab"]:hover {
-        color: var(--primary-blue);
-        background: #f1f5f9;
-    }
-    .stTabs [aria-selected="true"] {
-        color: var(--primary-blue) !important;
-        border-bottom: 2.5px solid var(--primary-blue) !important;
-        font-weight: 600 !important;
-        background: #eff6ff !important;
-    }
+.sg-pill-blue {
+    background: #E6F3EA;
+    color: #496F5A;
+    border: 1px solid #C8D8CC;
+}
+
+
+/* Welcome Hero Card */
+.sg-welcome-card {
+    background: linear-gradient(135deg, #FFFFFF 0%, #F7F3FC 100%);
+    border: 1px solid #E8EAE3;
+    border-top: 4px solid #648B75;
+    border-radius: 20px;
+    padding: 26px 28px;
+    margin-bottom: 22px;
+    box-shadow: 0 3px 12px rgba(52, 75, 64, 0.05);
+}
+
+.sg-welcome-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #EEE8FA;
+    color: #9277B5;
+    padding: 4px 11px;
+    border-radius: 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+    border: 1px solid #E3D9F2;
+}
+
+.sg-welcome-heading {
+    font-size: 24px;
+    font-weight: 700;
+    color: #344B40;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.4px;
+}
+
+.sg-welcome-desc {
+    font-size: 14.5px;
+    color: #59685F;
+    margin: 0 0 16px 0;
+    line-height: 1.6;
+    max-width: 860px;
+}
+
+
+
+/* Feature Chips */
+.sg-feature-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.sg-feature-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #496F5A;
+    background: #E6F3EA;
+    border: 1px solid #C8D8CC;
+    padding: 6px 12px;
+    border-radius: 12px;
+}
+
+/* Question and Form Inputs */
+.stTextArea textarea,
+.stTextInput input {
+    background: #FFFFFF !important;
+    color: #344B40 !important;
+    border: 1px solid #D8E4DA !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+}
+
+.stTextArea textarea:focus,
+.stTextInput input:focus {
+    border-color: #648B75 !important;
+    box-shadow: 0 0 0 2px rgba(100, 139, 117, 0.12) !important;
+}
+
+/* Dropdown Selectors */
+.stSelectbox div[data-baseweb="select"] > div {
+    background: #FFFFFF !important;
+    border-color: #D8E4DA !important;
+    border-radius: 12px !important;
+}
+
+/* PDF Upload Area */
+[data-testid="stFileUploader"] {
+    background: #F7F3FC;
+    border: 1px dashed #C8B9DF;
+    border-radius: 16px;
+    padding: 14px;
+}
+
+[data-testid="stFileUploader"] section {
+    background: transparent;
+}
+
+/* Generated Answer Card */
+.answer-card {
+    background: #FFFFFF;
+    border: 1px solid #E8EAE3;
+    border-left: 4px solid #648B75;
+    border-radius: 16px;
+    padding: 22px 24px;
+    margin: 16px 0;
+    box-shadow: 0 3px 12px rgba(52, 75, 64, 0.05);
+}
+
+/* Answer Section Headings */
+.answer-card h1,
+.answer-card h2,
+.answer-card h3 {
+    color: #344B40;
+    font-weight: 700;
+}
+
+/* Answer Paragraphs */
+.answer-card p,
+.answer-card li {
+    color: #46564D;
+    line-height: 1.7;
+}
+
+/* Marking Scheme Card */
+.marking-scheme-card {
+    background: #F7F3FC;
+    border: 1px solid #E3D9F2;
+    border-radius: 16px;
+    padding: 20px;
+    margin: 16px 0;
+}
+
+/* Examiner Tips */
+.examiner-tip {
+    background: #FFF3D6;
+    border-left: 4px solid #E8B85B;
+    border-radius: 12px;
+    padding: 14px 18px;
+    color: #665431;
+    margin: 14px 0;
+}
+
+/* Citation Card */
+.citation-card {
+    background: #E6F3EA;
+    border: 1px solid #C8D8CC;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    color: #496F5A;
+}
+
+/* Generated Answer Panel */
+.sg-answer-panel {
+    background: #FFFFFF;
+    border: 1px solid #E8EAE3;
+    border-radius: 20px;
+    padding: 26px 30px;
+    margin-top: 22px;
+    box-shadow: 0 4px 14px rgba(52, 75, 64, 0.05);
+}
+
+.sg-answer-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #E8EAE3;
+    margin-bottom: 18px;
+}
+
+.sg-answer-heading {
+    font-size: 20px;
+    font-weight: 700;
+    color: #344B40;
+}
+
+.sg-answer-sub {
+    font-size: 13.5px;
+    color: #829087;
+    margin-top: 3px;
+}
+
+.sg-answer-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sg-tag {
+    padding: 5px 11px;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.sg-tag-blue {
+    background: #E6F3EA;
+    color: #496F5A;
+    border: 1px solid #C8D8CC;
+}
+
+.sg-tag-lavender {
+    background: #EEE8FA;
+    color: #9277B5;
+    border: 1px solid #E3D9F2;
+}
+
+/* Marks Information */
+.sg-marks-info {
+    background: #FFF3D6;
+    border: 1px solid #F0DFB5;
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: #665431;
+    font-size: 13px;
+    line-height: 1.6;
+}
+/* Exam Blueprint Question Cards */
+.sg-blueprint-card {
+    background: linear-gradient(135deg, #FFFFFF 0%, #F7F3FC 100%);
+    border: 1px solid #E8EAE3;
+    border-left: 4px solid #648B75;
+    border-radius: 14px;
+    padding: 15px 17px;
+    margin: 10px 0 8px 0;
+    color: #344B40;
+    font-size: 14px;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(52, 75, 64, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sg-blueprint-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 14px rgba(52, 75, 64, 0.08);
+}
+
+.sg-blueprint-card strong {
+    color: #344B40;
+    font-weight: 650;
+}
+
+.sg-blueprint-card span {
+    display: inline-block;
+    margin-top: 8px;
+    color: #829087 !important;
+    font-size: 12px !important;
+}
+/* Document Explorer */
+.sg-panel [data-testid="stExpander"] {
+    background: #FFFFFF;
+    border: 1px solid #E8EAE3;
+    border-radius: 14px;
+    margin-bottom: 10px;
+}
+
+.sg-panel [data-testid="stTextArea"] textarea {
+    background: #F8F8F4 !important;
+    border: 1px solid #E8EAE3 !important;
+    border-radius: 12px !important;
+    color: #46564D !important;
+}
+
+/* Document Metrics */
+.sg-panel [data-testid="stMetric"] {
+    background: #F7F3FC;
+    border: 1px solid #EEE8FA;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+/* Semantic Search Results */
+.sg-source-item {
+    background: linear-gradient(135deg, #FFFFFF, #F7F3FC);
+    border: 1px solid #E3D9F2;
+    border-left: 4px solid #9277B5;
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin: 12px 0;
+    color: #46564D;
+    font-size: 13.5px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.sg-source-item strong {
+    color: #344B40;
+}
+
+.sg-source-item code {
+    background: #EEE8FA;
+    color: #765B9A;
+    border-radius: 5px;
+    padding: 2px 6px;
+}
+/* ==========================================
+   GLOBAL TEXT AND BACKGROUND CONTRAST FIX
+   ========================================== */
+
+/* Main application text */
+.stApp {
+    background-color: #F8F8F4;
+    color: #344B40;
+}
+
+
+/* Headings */
+.stApp h1,
+.stApp h2,
+.stApp h3,
+.stApp h4,
+.stApp h5,
+.stApp h6 {
+    color: #344B40 !important;
+}
+
+/* Text inputs and text areas */
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input {
+    background-color: #FFFFFF !important;
+    color: #344B40 !important;
+    -webkit-text-fill-color: #344B40 !important;
+    border-color: #C8D8CC !important;
+}
+
+/* Input placeholder text */
+.stTextInput input::placeholder,
+.stTextArea textarea::placeholder {
+    color: #829087 !important;
+    -webkit-text-fill-color: #829087 !important;
+    opacity: 1;
+}
+
+/* Dropdown selected values */
+.stSelectbox div[data-baseweb="select"] * {
+    color: #344B40 !important;
+}
+
+.stSelectbox div[data-baseweb="select"] > div {
+    background-color: #FFFFFF !important;
+}
+
+/* Dropdown menus */
+[data-baseweb="popover"],
+[data-baseweb="menu"],
+[role="listbox"] {
+    background-color: #FFFFFF !important;
+}
+
+[role="option"] {
+    color: #344B40 !important;
+}
+
+/* Radio buttons and checkboxes */
+.stRadio label,
+.stCheckbox label {
+    color: #344B40 !important;
+}
+
+/* Captions and help text */
+.stCaption,
+[data-testid="stCaptionContainer"] {
+    color: #829087 !important;
+}
+
+/* Secondary buttons */
+.stButton button[kind="secondary"] {
+    background-color: #FFFFFF !important;
+    color: #496F5A !important;
+    border: 1px solid #C8D8CC !important;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab"] {
+    color: #59685F !important;
+}
+
+.stTabs [aria-selected="true"] {
+    color: #496F5A !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #F7F3FC;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label {
+    color: #46564D !important;
+}
+
+/* =====================================
+   STUDYGENIE SIDEBAR REDESIGN
+   ===================================== */
+
+/* Sidebar background */
+[data-testid="stSidebar"] {
+    background: linear-gradient(
+        180deg,
+        #F1F5EF 0%,
+        #F7F3FC 100%
+    ) !important;
+    border-right: 1px solid #E3E9E1;
+}
+
+/* Sidebar content spacing */
+[data-testid="stSidebar"] > div:first-child {
+    padding: 24px 18px;
+}
+
+/* Sidebar headings */
+[data-testid="stSidebar"] h3 {
+    color: #344B40 !important;
+    font-size: 19px !important;
+    font-weight: 750 !important;
+}
+
+[data-testid="stSidebar"] h4,
+[data-testid="stSidebar"] h5 {
+    color: #496F5A !important;
+    font-weight: 700 !important;
+}
+
+/* Sidebar text */
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stCaption {
+    color: #46564D !important;
+}
+
+/* Sidebar buttons */
+[data-testid="stSidebar"] .stButton button {
+    background: #FFFFFF !important;
+    color: #496F5A !important;
+    border: 1px solid #C8D8CC !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}
+
+[data-testid="stSidebar"] .stButton button:hover {
+    background: #E6F3EA !important;
+    border-color: #648B75 !important;
+    color: #344B40 !important;
+}
+
+/* Sidebar input fields */
+[data-testid="stSidebar"] input {
+    background: #FFFFFF !important;
+    color: #344B40 !important;
+    -webkit-text-fill-color: #344B40 !important;
+    border-radius: 10px !important;
+}
+
+/* Sidebar dropdown */
+[data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background: #FFFFFF !important;
+    border: 1px solid #D8E4DA !important;
+    border-radius: 10px !important;
+}
+
+[data-testid="stSidebar"] [data-baseweb="select"] * {
+    color: #344B40 !important;
+}
+
+/* Sidebar dividers */
+[data-testid="stSidebar"] hr {
+    border-color: #DCE5DC !important;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+/* Sidebar alerts and account indicators */
+[data-testid="stSidebar"] [data-testid="stAlert"] {
+    border-radius: 12px !important;
+}
+
+/* =====================================
+   STUDYGENIE TOP NAVIGATION TABS
+   ===================================== */
+
+/* Tab container */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 10px;
+    background: #F0F2EC;
+    padding: 7px;
+    border: 1px solid #E3E9E1;
+    border-radius: 15px;
+}
+
+/* Individual tabs */
+.stTabs [data-baseweb="tab"] {
+    background: #F7F3FC !important;
+    border: 1px solid #E3D9F2 !important;
+    border-radius: 11px !important;
+    padding: 10px 18px !important;
+    color: #66527F !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}
+
+/* Hover effect */
+.stTabs [data-baseweb="tab"]:hover {
+    background: #EEE8FA !important;
+    color: #765B9A !important;
+}
+
+/* Active tab */
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: #648B75 !important;
+    border-color: #648B75 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 3px 8px rgba(73, 111, 90, 0.18);
+}
+
+/* Active tab text */
+.stTabs [data-baseweb="tab"][aria-selected="true"] p {
+    color: #FFFFFF !important;
+}
+
+/* Inactive tab text */
+.stTabs [data-baseweb="tab"][aria-selected="false"] p {
+    color: #66527F !important;
+}
+
+/* Remove default underline indicator */
+.stTabs [data-baseweb="tab-highlight"] {
+    background: transparent !important;
+}
+
+/* =====================================
+   STUDYGENIE BUTTON REDESIGN
+   ===================================== */
+
+/* Primary buttons */
+.stButton button[kind="primary"],
+.stFormSubmitButton button {
+    background: linear-gradient(135deg, #648B75, #496F5A) !important;
+    color: #FFFFFF !important;
+    border: 1px solid #496F5A !important;
+    border-radius: 12px !important;
+    font-weight: 650 !important;
+    padding: 9px 18px !important;
+    box-shadow: 0 3px 8px rgba(73, 111, 90, 0.14);
+    transition: all 0.2s ease;
+}
+
+/* Primary button hover */
+.stButton button[kind="primary"]:hover,
+.stFormSubmitButton button:hover {
+    background: linear-gradient(135deg, #496F5A, #3C604B) !important;
+    box-shadow: 0 5px 12px rgba(73, 111, 90, 0.22);
+    transform: translateY(-1px);
+}
+
+/* Secondary buttons */
+.stButton button[kind="secondary"] {
+    background: #EEE8FA !important;
+    color: #66527F !important;
+    border: 1px solid #DCCFEF !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease;
+}
+
+/* Secondary button hover */
+.stButton button[kind="secondary"]:hover {
+    background: #E3D9F2 !important;
+    border-color: #9277B5 !important;
+    color: #59456F !important;
+    transform: translateY(-1px);
+}
+
+/* Disabled buttons */
+.stButton button:disabled,
+.stFormSubmitButton button:disabled {
+    background: #E8EAE3 !important;
+    color: #829087 !important;
+    border-color: #E0E4DC !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* Button focus accessibility */
+.stButton button:focus-visible,
+.stFormSubmitButton button:focus-visible {
+    outline: 3px solid rgba(146, 119, 181, 0.35) !important;
+    outline-offset: 2px;
+}
+
+/* Download buttons */
+.stDownloadButton button {
+    background: #FFF3D6 !important;
+    color: #665431 !important;
+    border: 1px solid #F0DFB5 !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+}
+
+.stDownloadButton button:hover {
+    background: #FCE8B8 !important;
+    border-color: #E5CD91 !important;
+}
+
+/* =====================================
+   STUDYGENIE METRIC CARDS
+   ===================================== */
+
+/* Metric card container */
+[data-testid="stMetric"] {
+    background: linear-gradient(145deg, #FFFFFF, #F4F8F2) !important;
+    border: 1px solid #DCE8DC !important;
+    border-radius: 16px !important;
+    padding: 18px 16px !important;
+    box-shadow: 0 3px 10px rgba(52, 75, 64, 0.05);
+    transition: all 0.2s ease;
+}
+
+/* Metric label */
+[data-testid="stMetricLabel"] {
+    color: #59685F !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+}
+
+/* Metric value */
+[data-testid="stMetricValue"] {
+    color: #344B40 !important;
+    font-size: 27px !important;
+    font-weight: 750 !important;
+}
+
+/* Metric delta */
+[data-testid="stMetricDelta"] {
+    font-weight: 600 !important;
+}
+
+/* Metric hover */
+[data-testid="stMetric"]:hover {
+    border-color: #AFCBB5 !important;
+    box-shadow: 0 5px 14px rgba(52, 75, 64, 0.09);
+    transform: translateY(-2px);
+}
+
+/* =====================================
+   STUDYGENIE EXPANDERS & PANELS
+   ===================================== */
+
+/* Expander container */
+[data-testid="stExpander"] {
+    background: #FFFFFF !important;
+    border: 1px solid #E1E9E0 !important;
+    border-radius: 15px !important;
+    margin-bottom: 12px !important;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(52, 75, 64, 0.04);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Expander hover */
+[data-testid="stExpander"]:hover {
+    border-color: #B9CEBD !important;
+    box-shadow: 0 4px 12px rgba(52, 75, 64, 0.07);
+}
+
+/* Expander heading */
+[data-testid="stExpander"] summary {
+    background: #F7F3FC !important;
+    color: #344B40 !important;
+    padding: 13px 16px !important;
+    font-weight: 650 !important;
+}
+
+/* Expander heading text */
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary span {
+    color: #344B40 !important;
+}
+
+/* Expander arrow */
+[data-testid="stExpander"] summary svg {
+    color: #9277B5 !important;
+    fill: #9277B5 !important;
+}
+
+/* Expanded content */
+[data-testid="stExpander"] div[role="region"] {
+    background: #FFFFFF !important;
+    color: #46564D !important;
+    padding: 14px 16px !important;
+}
+
+/* Information alerts */
+[data-testid="stAlert"] {
+    border-radius: 13px !important;
+    border: 1px solid #DCE8DC !important;
+}
+
+/* Captions inside panels */
+[data-testid="stExpander"] [data-testid="stCaptionContainer"] {
+    color: #829087 !important;
+}
+/* =====================================
+   STUDYGENIE RADIO BUTTONS & CHECKBOXES
+   ===================================== */
+
+/* Radio and checkbox labels */
+.stRadio label,
+.stCheckbox label {
+    color: #344B40 !important;
+    font-weight: 500 !important;
+}
+
+/* Radio circles */
+.stRadio [role="radio"] {
+    border-color: #648B75 !important;
+}
+
+/* Selected radio circle */
+.stRadio [role="radio"][aria-checked="true"] {
+    background-color: #648B75 !important;
+    border-color: #648B75 !important;
+}
+
+/* Checkbox container */
+.stCheckbox [data-testid="stCheckbox"] {
+    color: #344B40 !important;
+}
+
+/* Checkbox hover */
+.stCheckbox label:hover {
+    color: #496F5A !important;
+}
+
+/* =====================================
+   STUDYGENIE PROGRESS BARS
+   ===================================== */
+
+/* Progress bar background */
+.stProgress > div > div {
+    background-color: #E6F3EA !important;
+    border-radius: 20px !important;
+}
+
+/* Progress bar filled portion */
+.stProgress > div > div > div {
+    background: linear-gradient(
+        90deg,
+        #648B75,
+        #9277B5
+    ) !important;
+    border-radius: 20px !important;
+}
+
+/* Spinner text */
+.stSpinner > div {
+    color: #496F5A !important;
+}
+
+/* Status messages */
+[data-testid="stStatusWidget"] {
+    background: #F7F3FC !important;
+    border: 1px solid #E3D9F2 !important;
+    border-radius: 12px !important;
+}
+/* =====================================
+   STUDYGENIE FILE UPLOADER
+   ===================================== */
+
+/* Uploader container */
+[data-testid="stFileUploader"] {
+    background: #F7F3FC !important;
+    border: 1px dashed #B9A5D5 !important;
+    border-radius: 16px !important;
+    padding: 12px !important;
+}
+
+/* Uploader drop zone */
+[data-testid="stFileUploader"] section {
+    background: #F7F3FC !important;
+    border: none !important;
+}
+
+/* Uploader text */
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] small {
+    color: #46564D !important;
+}
+
+/* Browse files button */
+[data-testid="stFileUploader"] button {
+    background: #648B75 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #496F5A !important;
+    border-radius: 10px !important;
+}
+
+/* Uploaded file information */
+[data-testid="stFileUploaderFile"] {
+    background: #FFFFFF !important;
+    border: 1px solid #DCE8DC !important;
+    border-radius: 10px !important;
+}
+/* =====================================
+   STUDYGENIE DATA TABLES
+   ===================================== */
+
+/* Table container */
+[data-testid="stTable"],
+[data-testid="stDataFrame"] {
+    border: 1px solid #DCE8DC !important;
+    border-radius: 13px !important;
+    overflow: hidden !important;
+}
+
+/* Table header */
+[data-testid="stDataFrame"] thead th {
+    background: #E6F3EA !important;
+    color: #344B40 !important;
+    font-weight: 700 !important;
+}
+
+/* Table cells */
+[data-testid="stDataFrame"] tbody td {
+    color: #46564D !important;
+}
+
+/* Table row hover */
+[data-testid="stDataFrame"] tbody tr:hover {
+    background: #F7F3FC !important;
+}
+
+/* Static table text */
+[data-testid="stTable"] th {
+    background: #E6F3EA !important;
+    color: #344B40 !important;
+}
+
+[data-testid="stTable"] td {
+    color: #46564D !important;
+}
+/* =====================================
+   STUDYGENIE MESSAGE STYLING
+   ===================================== */
+
+/* Common alert styling */
+[data-testid="stAlert"] {
+    border-radius: 13px !important;
+    padding: 12px 16px !important;
+}
+
+/* Alert text */
+[data-testid="stAlert"] p {
+    color: #344B40 !important;
+}
+
+/* Success message */
+[data-testid="stAlert"][kind="success"] {
+    background: #E6F3EA !important;
+    border: 1px solid #AFCBB5 !important;
+}
+
+/* Information message */
+[data-testid="stAlert"][kind="info"] {
+    background: #EEE8FA !important;
+    border: 1px solid #DCCFEF !important;
+}
+
+/* Warning message */
+[data-testid="stAlert"][kind="warning"] {
+    background: #FFF3D6 !important;
+    border: 1px solid #F0DFB5 !important;
+}
+
+/* Error message */
+[data-testid="stAlert"][kind="error"] {
+    background: #FCE8E8 !important;
+    border: 1px solid #EBC4C4 !important;
+}
+/* =====================================
+   STUDYGENIE CONTENT TYPOGRAPHY
+   ===================================== */
+
+/* Main content headings */
+.stMainBlockContainer h1 {
+    color: #344B40 !important;
+    font-weight: 800 !important;
+}
+
+.stMainBlockContainer h2 {
+    color: #496F5A !important;
+    font-weight: 750 !important;
+}
+
+.stMainBlockContainer h3 {
+    color: #66527F !important;
+    font-weight: 700 !important;
+}
+
+/* Main content paragraphs */
+.stMainBlockContainer p {
+    line-height: 1.65 !important;
+}
+
+/* Horizontal dividers */
+.stMainBlockContainer hr {
+    border-color: #E3E9E1 !important;
+    margin-top: 20px !important;
+    margin-bottom: 20px !important;
+}
 </style>
+
 """, unsafe_allow_html=True)
 
 # Session State Initialization
@@ -523,10 +1128,198 @@ if "target_marks_input" not in st.session_state:
 if "active_doc_ids" not in st.session_state:
     st.session_state.active_doc_ids = []
 
+
+# ============================================================
+# USER AUTHENTICATION AND ROLE-BASED ENTRY
+# ============================================================
+
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+
+if not st.session_state.current_user:
+
+    st.markdown("""
+    <style>
+    .auth-wrapper {
+        max-width: 760px;
+        margin: 35px auto 10px auto;
+        background: #FFFFFF;
+        border: 1px solid #E8EAE3;
+        border-radius: 22px;
+        padding: 35px 40px;
+        box-shadow: 0 12px 35px rgba(52, 75, 64, 0.07);
+    }
+
+    .auth-brand {
+        background: linear-gradient(135deg, #648B75, #9277B5);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 32px;
+        font-weight: 800;
+        text-align: center;
+        letter-spacing: -1px;
+    }
+
+    .auth-subtitle {
+        color: #829087;
+        text-align: center;
+        font-size: 14px;
+        margin-bottom: 25px;
+    }
+
+    .auth-tag {
+        display: inline-block;
+        background: #E6F3EA;
+        color: #496F5A;
+        border-radius: 20px;
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+</style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="auth-wrapper">', unsafe_allow_html=True)
+    st.markdown('<div class="auth-brand">📖 StudyGenie</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        '<div class="auth-subtitle">'
+        'Your intelligent academic learning and evaluation assistant'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    login_tab, register_tab = st.tabs(
+        ["Sign In", "Create Account"]
+    )
+
+    # ---------------- LOGIN ----------------
+    with login_tab:
+        st.subheader("Welcome back")
+        st.caption("Sign in to continue to your academic workspace.")
+
+        with st.form("login_form"):
+            login_email = st.text_input(
+                "Email address",
+                placeholder="you@example.com"
+            )
+            login_password = st.text_input(
+                "Password",
+                type="password"
+            )
+
+            login_submitted = st.form_submit_button(
+                "Sign In",
+                use_container_width=True
+            )
+
+        if login_submitted:
+            user = authenticate_user(login_email, login_password)
+
+            if user:
+                st.session_state.current_user = user
+                st.success("Login successful!")
+                st.rerun()
+            else:
+                st.error("Invalid email or password.")
+
+    # ---------------- REGISTRATION ----------------
+    with register_tab:
+        st.subheader("Create your account")
+        st.caption("Register as a student or an authorised professor.")
+
+        with st.form("registration_form"):
+            full_name = st.text_input("Full name")
+            new_email = st.text_input("Email address")
+
+            account_role = st.selectbox(
+                "Account type",
+                ["Student", "Professor"]
+            )
+
+            new_password = st.text_input(
+                "Create password",
+                type="password"
+            )
+
+            confirm_password = st.text_input(
+                "Confirm password",
+                type="password"
+            )
+
+            teacher_code = ""
+
+            if account_role == "Professor":
+                teacher_code = st.text_input(
+                    "Professor invitation code",
+                    type="password",
+                    help="Enter the private code provided by the project administrator."
+                )
+
+            register_submitted = st.form_submit_button(
+                "Create Account",
+                use_container_width=True
+            )
+
+        if register_submitted:
+            if not full_name.strip() or not new_email.strip():
+                st.error("Please complete all required fields.")
+
+            elif len(new_password) < 8:
+                st.error("Password must contain at least 8 characters.")
+
+            elif new_password != confirm_password:
+                st.error("Passwords do not match.")
+
+            else:
+                try:
+                    if account_role == "Student":
+                        create_user(
+                            full_name,
+                            new_email,
+                            new_password,
+                            "student"
+                        )
+                    else:
+                        create_teacher_user(
+                            full_name,
+                            new_email,
+                            new_password,
+                            teacher_code
+                        )
+
+                    st.success(
+                        "Account created successfully! "
+                        "Please sign in."
+                    )
+
+                except ValueError as error:
+                    st.error(str(error))
+
+                except Exception as error:
+                    st.error(
+                        f"Registration failed: {error}"
+                    )
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop()
+
+
+# Current authenticated user
+current_user = st.session_state.current_user
+
+
 sample_pdf_path = UPLOADS_DIR / "Sample_Operating_Systems_Notes.pdf"
 
 # Document Ingestion Helper
-def process_uploaded_files(files, replace=True, api_key=None, model="gemini-2.5-flash"):
+def process_uploaded_files(
+    files,
+    replace=True,
+    api_key=None,
+    model="gemini-3.8-flash",
+    user_id=None
+):
     processor = AcademicPDFProcessor()
     new_chunks = []
     new_metadata = []
@@ -552,15 +1345,23 @@ def process_uploaded_files(files, replace=True, api_key=None, model="gemini-2.5-
             out_f.write(f.getbuffer())
         
         info = processor.process_file(str(save_path), f.name)
-        save_document_record(
+        saved_doc_id = save_document_record(
             filename=f.name,
             file_path=str(save_path),
             total_pages=info["total_pages"],
             chunk_count=info["total_chunks"],
-            file_size=len(f.getbuffer())
+            file_size=len(f.getbuffer()),
+            user_id=user_id
         )
+
+        info["doc_id"] = saved_doc_id
+
+        # Attach the database document ID to every chunk
+        for chunk in info["chunks"]:
+            chunk["doc_id"] = saved_doc_id
+        
         new_chunks.extend(info["chunks"])
-        new_metadata.append(info)
+        new_metadata.append(info)  
     
     st.session_state.all_chunks.extend(new_chunks)
     st.session_state.doc_metadata.extend(new_metadata)
@@ -590,7 +1391,7 @@ def load_sample_demo_mode():
         
         bp_engine = AcademicBlueprintEngine(
             api_key=os.getenv("GEMINI_API_KEY"),
-            model_name="gemini-2.5-flash"
+            model_name="gemini-3.8-flash"
         )
         st.session_state.blueprint_data = bp_engine.generate_blueprint(
             st.session_state.doc_metadata,
@@ -624,6 +1425,23 @@ st.markdown("""
 
 # Sidebar Controls
 with st.sidebar:
+
+    st.markdown("### 📖 StudyGenie")
+
+    st.markdown(f"**{current_user['full_name']}**")
+    st.caption(current_user["email"])
+
+    if current_user["role"] == "teacher":
+        st.success("Professor Account")
+    else:
+        st.info("Student Account")
+
+    if st.button("Log Out", use_container_width=True):
+        st.session_state.current_user = None
+        st.rerun()
+
+    st.divider()
+
     st.markdown("### Settings & Controls")
     
     st.markdown("##### AI Model Tier")
@@ -776,7 +1594,8 @@ with tab_study:
                             uploaded_files,
                             replace=replace_existing,
                             api_key=user_api_key or os.getenv("GEMINI_API_KEY"),
-                            model=selected_model
+                            model=selected_model,
+                             user_id=current_user["id"]
                         )
                     st.success(f"Indexed {len(uploaded_files)} file(s) into {len(st.session_state.all_chunks)} chunks.")
                     st.rerun()
@@ -905,6 +1724,15 @@ with tab_study:
                             top_k=top_k,
                             active_doc_ids=active_ids
                         )
+                    with st.expander("Debug: Retrieved PDF Content"):
+                     st.write("Question:", user_question)
+                     st.write("Number of chunks:", len(retrieved_chunks))
+                 
+                     for i, chunk in enumerate(retrieved_chunks):
+                         st.write(f"Chunk {i + 1}")
+                         st.write("Page:", chunk.get("page"))
+                         st.write(chunk.get("text", ""))
+                         st.divider()
                     
                     generator_inst = AcademicAnswerGenerator(
                         api_key=user_api_key or os.getenv("GEMINI_API_KEY"),
@@ -921,14 +1749,20 @@ with tab_study:
                     st.session_state.selected_question_for_eval = user_question
                     
                     save_generated_answer(
-                        doc_id=1 if st.session_state.doc_metadata else None,
+                        doc_id=(
+                           st.session_state.doc_metadata[0].get("doc_id")
+                           if len(st.session_state.doc_metadata) == 1
+                           else None
+                           ),
                         question=user_question,
                         marks=target_marks,
                         answer_text=result["answer_markdown"],
                         scheme_dict=result["scheme"],
                         diagram_code=result.get("diagram_code", ""),
-                        sources=result.get("sources", [])
+                        sources=result.get("sources", []),
+                        user_id=current_user["id"]
                     )
+                    
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -950,7 +1784,9 @@ with tab_study:
                 </div>
                 <div class="sg-answer-tags">
                     <span class="sg-tag sg-tag-blue">{ans_data['marks']} Marks Standard</span>
-                    <span class="sg-tag sg-tag-lavender">{ans_data['marks'] * 2} Expected Points</span>
+                    <span class="sg-tag sg-tag-lavender">
+                       {ans_data.get('generated_points_count', 0)} Points Generated
+</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1190,7 +2026,8 @@ with tab_eval:
                         target_marks=eval_marks,
                         marks_awarded=eval_res["marks_awarded"],
                         student_answer=student_text,
-                        feedback=eval_res
+                        feedback=eval_res,
+                        user_id=current_user["id"]
                     )
 
         # Render Evaluation Results
@@ -1587,7 +2424,7 @@ with tab_explorer:
                 page_sel = st.selectbox(
                     f"Select Page ({doc['source_doc']}):",
                     options=[p["page_number"] for p in doc["pages"]],
-                    key=f"page_sel_{doc['source_doc']}"
+                    key=f"page_sel_{doc['source_doc']}_{i}"
                 )
                 
                 selected_page_text = next((p["text"] for p in doc["pages"] if p["page_number"] == page_sel), "")
@@ -1655,7 +2492,10 @@ with tab_history:
     col_h1, col_h2 = st.columns(2)
     with col_h1:
         st.markdown("##### Recent Generated Answers")
-        recent_ans = list_recent_answers(limit=8)
+        recent_ans = list_recent_answers(
+        user_id=current_user["id"],
+        limit=8
+        )
         if not recent_ans:
             st.caption("No answers generated yet.")
         else:
@@ -1666,7 +2506,10 @@ with tab_history:
     
     with col_h2:
         st.markdown("##### Recent Student Evaluations")
-        recent_evs = list_recent_evaluations(limit=8)
+        recent_evs = list_recent_evaluations(
+    user_id=current_user["id"],
+    limit=8
+)
         if not recent_evs:
             st.caption("No student evaluations recorded yet.")
         else:

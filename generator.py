@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from config import MARK_SCHEMES, GEMINI_MODELS, calibrate_scheme_components
 from diagram_engine import DiagramEngine
 from structured_output import StructuredOutputPipeline
+from gemini_client import generate_text
 
 NOT_ENOUGH_INFO_MSG = "The uploaded PDF does not contain enough relevant information to answer this question."
 
@@ -22,7 +23,7 @@ class AcademicAnswerGenerator:
     Transforms raw extracted text into structured, typed, user-friendly responses.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model_name = model_name
 
@@ -92,9 +93,6 @@ class AcademicAnswerGenerator:
 
     def _generate_with_gemini(self, question: str, marks: int, context_text: str, 
                               scheme_template: Dict, diagram_needed: bool) -> Optional[Dict[str, Any]]:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model_name)
 
         system_prompt = f"""
 You are an expert Academic Professor and Chief Paper Evaluator in Computer Science and Engineering at Siddaganga Institute of Technology (SIT) / VTU.
@@ -102,6 +100,16 @@ Your task is to transform academic source content into a validated, highly struc
 
 CRITICAL INSTRUCTIONS:
 1. Treat the provided CONTEXT as raw source data to analyze, NOT as the final response.
+   1A. Write an original, well-framed academic answer using the source facts.
+   1B. Do NOT copy complete sentences or paragraphs directly from the PDF.
+   1C. Rephrase the information in simple, technically correct academic language.
+   1D. Explain each point in a complete sentence. Do not merely list extracted statements.
+   1E. Stay strictly within the topic asked in the question.
+   1F. Do not introduce the next chapter, unrelated concepts, or unnecessary background.
+   1G. Organize the answer using a short introduction, meaningful headings,
+       numbered explanations, and a brief conclusion where appropriate.
+   1H. Preserve technical terms, formulas, definitions, and essential facts accurately.
+   1I. Never invent details or repeat the same idea to increase the point count.
 2. Analyze the context to extract key entities, definitions, structural components, operational steps, and technical attributes.
 3. If the context does not contain enough relevant information to answer the question, return:
    "answer_markdown": "{NOT_ENOUGH_INFO_MSG}"
@@ -140,13 +148,22 @@ CRITICAL INSTRUCTIONS:
     ]
 }}
 
-MARKS-BASED POINTS REQUIREMENT:
-- Required number of points = {marks} × 2 = {marks * 2} points  
-- Generate EXACTLY {marks * 2} distinct, meaningful, non-repetitive, factually accurate numbered points
-- Number every point in the answer (1. 2. 3. ...)
-- Do NOT fabricate information to reach the count — if context supports fewer facts, generate fewer but accurate points
-- Verify your point count equals {marks * 2} before returning the JSON
-- Add a top-level field: "generated_points_count": <actual count of points you generated>
+MARKS-BASED ANSWER REQUIREMENTS:
+
+- 2 marks: Provide a concise definition and 1-2 important points.
+- 5 marks: Provide an introduction and approximately 4-6 meaningful points.
+- 10 marks: Provide an introduction, approximately 8-10 well-explained
+  points, and a short conclusion where appropriate.
+- 15 marks: Provide a detailed introduction, approximately 12-15
+  meaningful points, and a conclusion where appropriate.
+
+These are guidelines, not forced counts.
+- Every point must contain relevant information supported by the PDF.
+- Do not repeat information or create filler points.
+- Use headings when the answer contains different subtopics.
+- Do not include unrelated concepts to increase answer length.
+- Report the actual number of points generated.
+- The marking scheme must total exactly the requested marks.
 
 QUESTION TYPE HANDLING:
 - Define: Give the definition first as Point 1, followed by relevant operational details.
@@ -179,13 +196,10 @@ CONTEXT FROM ACADEMIC MATERIALS:
 QUESTION: {question}
 """
 
-        response = model.generate_content(
-            system_prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
+        response_text = generate_text(system_prompt, self.api_key, self.model_name, json_mode=True)
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(response_text)
             
             # Check for lack of information
             if data.get("answer_markdown") == NOT_ENOUGH_INFO_MSG:
@@ -216,8 +230,8 @@ QUESTION: {question}
                     # Retry once to fix syntax error
                     try:
                         retry_prompt = f"The previous Mermaid diagram had syntax errors: {err_msg}.\nOriginal Code:\n{diagram_code}\nPlease fix the Mermaid syntax. Return ONLY valid Mermaid code, or an empty string if context cannot support it."
-                        retry_res = model.generate_content(retry_prompt)
-                        cleaned_retry = DiagramEngine.sanitize_mermaid_code(retry_res.text)
+                        retry_text = generate_text(retry_prompt, self.api_key, self.model_name)
+                        cleaned_retry = DiagramEngine.sanitize_mermaid_code(retry_text)
                         is_valid2, _ = DiagramEngine.validate_mermaid_syntax(cleaned_retry)
                         if is_valid2:
                             data["diagram_code"] = cleaned_retry
@@ -340,13 +354,8 @@ QUESTION: {question}
             if san:
                 raw_candidates.append(san)
 
-        # 2. If needed, pull additional distinct statements from bullet lines in chunks
-        if len(raw_candidates) < target_points:
-            for c in context_chunks:
-                for line in c.get("text", "").split("\n"):
-                    san = sanitize_candidate(line)
-                    if san and san not in raw_candidates:
-                        raw_candidates.append(san)
+       # Do not add extra lines from unrelated chunks just to reach
+# the expected point count. Use only relevant candidates.
 
         # 3. Question-type specific ordering
         ordered_candidates = []
@@ -423,7 +432,9 @@ QUESTION: {question}
             if any(k in s_lower for k in matching_keywords):
                 relevant_sentences.append(s)
 
-        usable_sentences = relevant_sentences if relevant_sentences else [s for s in sentences if len(s) > 25]
+        # Use only sentences relevant to the question.
+        # Never fill the answer with unrelated PDF content.
+        usable_sentences = relevant_sentences
 
         # If insufficient topical coverage or no usable academic text, state insufficient information
         if not is_relevant_context or not usable_sentences:

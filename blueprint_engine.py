@@ -3,6 +3,7 @@ import re
 import json
 import hashlib
 from typing import List, Dict, Any, Optional
+from gemini_client import generate_text
 
 def compute_doc_fingerprint(doc_metadata: List[Dict[str, Any]]) -> str:
     """Computes a deterministic hash fingerprint representing the current document set."""
@@ -23,7 +24,7 @@ class AcademicBlueprintEngine:
     (2-Mark, 5-Mark, 10-Mark, 15-Mark) from currently active academic documents.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model_name = model_name
 
@@ -72,8 +73,6 @@ class AcademicBlueprintEngine:
     def _generate_with_gemini(self, doc_metadata: List[Dict[str, Any]], 
                               all_chunks: List[Dict[str, Any]], 
                               fingerprint: str) -> Optional[Dict[str, Any]]:
-        import google.genai as genai
-        client = genai.Client(api_key=self.api_key)
 
         # Compile summaries and key chunks per document
         docs_summary = []
@@ -120,14 +119,10 @@ Return ONLY a JSON object with this exact schema:
 }}
 """
 
-        response = client.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
-        )
+        response_text = generate_text(prompt, self.api_key, self.model_name, json_mode=True)
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(response_text)
             raw_questions = data.get("questions", [])
             q_by_marks = {2: [], 5: [], 10: [], 15: []}
             for q in raw_questions:

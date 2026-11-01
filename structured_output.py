@@ -100,265 +100,104 @@ class StructuredOutputPipeline:
             "combined_text": combined_text
         }
 
+    
     @classmethod
-    def generate_structured_data(cls, question: str, marks: int, 
+    def generate_structured_data(cls, question: str, marks: int,
                                  context_chunks: List[Dict[str, Any]],
                                  analysis: Optional[Dict[str, Any]] = None,
                                  target_points: Optional[int] = None) -> Dict[str, Any]:
         """
-        Stage 2 & 3: Schema Selection and Structured Data Generation.
-        Transforms extracted information into a typed, machine-readable JSON structure.
+        Creates structured academic content using only facts extracted
+        from the supplied PDF context. Does not insert predefined examples
+        or unsupported technical details.
         """
-        if not analysis:
+        if analysis is None:
             analysis = cls.analyze_content(question, context_chunks)
 
         if target_points is None:
             target_points = marks * 2
 
-        content_type = analysis["content_type"]
-        domain = analysis["domain"]
-        entities = analysis["entities"]
-        sentences = analysis["sentences"]
-        relationships = analysis["relationships"]
-
         topic = question.strip().rstrip("?").rstrip(".")
+        content_type = analysis.get("content_type", "conceptual_definition")
+        domain = analysis.get("domain", "Computer Science & Engineering")
+        entities = analysis.get("entities", [])
+        sentences = analysis.get("sentences", [])
 
-        # Define schema-conforming sections based on content_type and marks
+        # Keep only sentences that contain at least one meaningful
+        # question keyword.
+        stop_words = {
+            "what", "which", "where", "when", "explain", "describe",
+            "discuss", "define", "state", "list", "with", "from",
+            "that", "this", "their", "there", "does", "have",
+            "about", "give", "write", "brief", "concept", "diagram"
+        }
+
+        keywords = {
+            word for word in re.findall(r"\b[a-zA-Z]{3,}\b", question.lower())
+            if word not in stop_words
+        }
+
+        relevant_sentences = []
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if keywords and any(
+                re.search(r"\b" + re.escape(word) + r"\b", sentence_lower)
+                for word in keywords
+            ):
+                if sentence not in relevant_sentences:
+                    relevant_sentences.append(sentence)
+
+        # Do not create generic content when the PDF does not support it.
         sections = []
         missing_fields = []
-        technical_attributes = {}
 
-        if content_type == "conceptual_definition":
-            # Section 1: Definition & Fundamental Overview (Key-Value)
-            core_def = sentences[0] if sentences else f"Core principle regarding {topic}."
+        if not relevant_sentences:
+            missing_fields.append(
+                "No sufficiently relevant sentences were identified in the retrieved context."
+            )
+
+        # Use actual retrieved sentences as evidence.
+        # No predefined component descriptions or fabricated steps.
+        if relevant_sentences:
             sections.append({
-                "heading": "1. Conceptual Foundation & Core Definition",
-                "type": "key_value",
-                "items": [
-                    {"key": "Target Concept", "value": topic},
-                    {"key": "Academic Domain", "value": domain},
-                    {"key": "Formal Definition", "value": core_def},
-                    {"key": "Core Purpose", "value": sentences[1] if len(sentences) > 1 else "Essential mechanism in computing architectures."}
-                ],
-                "summary": "Formal theoretical foundation and architectural categorization."
-            })
-
-            # Section 2: Key Operational Characteristics (Bullet Points / Labeled items)
-            char_items = []
-            max_bullets = max(2, target_points - 2)  # reserve 2 for def section
-            for i, s in enumerate(sentences[1:min(max_bullets + 1, len(sentences))]):
-                char_items.append(f"** {i+1}**: {s}")
-            if not char_items:
-                char_items.append("Fundamental operating principles specified in course syllabus.")
-
-            sections.append({
-                "heading": "2. Key Characteristics & Architectural Principles",
+                "heading": "Relevant Information from the PDF",
                 "type": "bullet_points",
-                "points": char_items,
-                "summary": "Core operational properties observed during system execution."
+                "points": relevant_sentences[:target_points],
+                "summary": "Information relevant to the question, extracted from the retrieved PDF context."
             })
 
-            # Section 3: Technical Attributes & Practical Scope
-            tech_items = [
-                {"key": "Primary Scope", "value": f"Applies to {domain} system implementations."},
-                {"key": "Verification Criteria", "value": "Compliance with standard state invariants and predictable execution."}
-            ]
-            if entities:
-                tech_items.append({"key": "Key Entities Involved", "value": ", ".join(entities[:4])})
+        if entities:
             sections.append({
-                "heading": "3. Technical Context & Scope",
-                "type": "key_value",
-                "items": tech_items,
-                "summary": "Contextual parameters governing implementation and usage."
-            })
-
-        elif content_type == "architectural_system":
-            # Section 1: System Overview (Key-Value)
-            overview_text = sentences[0] if sentences else f"Architectural framework of {topic}."
-            sections.append({
-                "heading": "1. Architectural Overview & System Role",
-                "type": "key_value",
-                "items": [
-                    {"key": "System Subsystem", "value": topic},
-                    {"key": "Domain Category", "value": domain},
-                    {"key": "Core Responsibility", "value": overview_text}
-                ],
-                "summary": "Theoretical overview of the subsystem components."
-            })
-
-            # Section 2: Component Breakdown (Structured Table)
-            # Build structured component rows from extracted entities and context
-            comp_headers = ["Subsystem Component", "Primary Responsibility", "Interface / Connection", "Operational Mechanism"]
-            comp_rows = []
-            
-            # Map known components or extracted entities to structured rows
-            if "paging" in topic.lower() or "address" in topic.lower():
-                comp_rows = [
-                    ["CPU / Execution Unit", "Generates logical addresses during instruction cycle", "Address Bus -> MMU", "Splits into Page Number (p) and Offset (d)"],
-                    ["Page Table", "Maintains translation mappings from pages to physical frames", "MMU Internal Reference", "Indexed by p to retrieve frame number (f)"],
-                    ["Physical RAM", "Stores actual process code, data, and stack frames", "Physical Address Bus", "Accessed at base frame address + offset (d)"]
-                ]
-            elif "layer" in topic.lower() or "osi" in topic.lower() or "network" in topic.lower():
-                comp_rows = [
-                    ["Application Layer", "Provides end-user services and application protocols", "Presentation / Transport", "HTTP, DNS, FTP network requests"],
-                    ["Transport Layer", "Guarantees end-to-end host communication and reliability", "Network Layer", "Port addressing, segmentation, TCP/UDP"],
-                    ["Network Layer", "Logical addressing, routing, and path determination", "Data Link Layer", "IP routing, packet forwarding across networks"],
-                    ["Data Link / Physical", "Framing, physical transmission over media", "Hardware Media", "MAC addressing, bitstream signal encoding"]
-                ]
-            else:
-                # Dynamic component extraction from entities
-                for ent in entities[:4]:
-                    matching_s = next((s for s in sentences if ent.lower() in s.lower()), f"Handles operations associated with {ent}")
-                    comp_rows.append([ent, matching_s[:80] + "...", "System Interconnect", "Deterministic modular execution"])
-
-            if not comp_rows:
-                comp_rows = [["Core Module", "Primary processing logic", "System Bus", "Executes according to protocol specification"]]
-
-            sections.append({
-                "heading": "2. Structural Component Matrix",
-                "type": "table",
-                "table_data": {
-                    "headers": comp_headers,
-                    "rows": comp_rows
-                },
-                "summary": "Detailed matrix of active structural components, interfaces, and operational roles."
-            })
-
-            # Section 3: Operational Principles & Interconnections
-            inter_points = []
-            for r in relationships:
-                inter_points.append(f"**{r['source']}** {r['relation']} **{r['target']}**")
-            for s in sentences[1:min(4, len(sentences))]:
-                inter_points.append(f"**Execution Principle**: {s}")
-
-            sections.append({
-                "heading": "3. Step-by-Step Data Flow & Component Interconnections",
+                "heading": "Key Technical Terms",
                 "type": "bullet_points",
-                "points": inter_points[:5] if inter_points else ["Coordinates data transfer across privilege boundaries."],
-                "summary": "Flow of signals, data packets, or addresses across modular boundaries."
+                "points": entities[:8],
+                "summary": "Technical terms identified in the retrieved context."
             })
-
-        elif content_type == "process_workflow":
-            # Section 1: Workflow Foundation & Objectives
-            sections.append({
-                "heading": "1. Operational Process Foundation",
-                "type": "key_value",
-                "items": [
-                    {"key": "Procedure / Algorithm", "value": topic},
-                    {"key": "Classification", "value": f"{domain} Workflow"},
-                    {"key": "Governing Objective", "value": sentences[0] if sentences else "Guarantees deterministic, safe state execution."}
-                ],
-                "summary": "Scope and theoretical basis of the workflow."
-            })
-
-            # Section 2: Step-by-Step Sequential Execution (Ordered Steps)
-            step_patterns = re.findall(r'(?:step\s*(\d+)[:\-\.]?\s*([^.\n;]{10,90}))', analysis["combined_text"], re.IGNORECASE)
-            steps = []
-            if step_patterns:
-                for num, desc in step_patterns[:5]:
-                    steps.append({
-                        "step_number": int(num),
-                        "phase_name": f"Stage {num}",
-                        "action": desc.strip(),
-                        "resulting_state": "Proceeds to subsequent verification stage"
-                    })
-            elif "banker" in topic.lower() or "safety" in topic.lower() or "deadlock" in topic.lower():
-                steps = [
-                    {"step_number": 1, "phase_name": "Vector Initialization", "action": "Initialize Work = Available and Finish[i] = False for all processes i.", "resulting_state": "Baseline resources established"},
-                    {"step_number": 2, "phase_name": "Condition Check", "action": "Find an index i such that Finish[i] == False and Need[i] <= Work.", "resulting_state": "Eligible process identified"},
-                    {"step_number": 3, "phase_name": "Resource Reclaim", "action": "Work = Work + Allocation[i]; Finish[i] = True. Return to Step 2.", "resulting_state": "Resources returned to pool"},
-                    {"step_number": 4, "phase_name": "Safety Evaluation", "action": "If Finish[i] == True for all i, system is in SAFE STATE; else UNSAFE.", "resulting_state": "Final verdict"}
-                ]
-            else:
-                for idx, s in enumerate(sentences[1:min(5, len(sentences))], 1):
-                    steps.append({
-                        "step_number": idx,
-                        "phase_name": f"Execution Phase {idx}",
-                        "action": s,
-                        "resulting_state": "Successful state progression"
-                    })
-
-            sections.append({
-                "heading": "2. Step-by-Step Execution Sequence",
-                "type": "ordered_steps",
-                "steps": steps,
-                "summary": "Formal stage-by-stage operational progression."
-            })
-
-            # Section 3: State Invariants & Boundary Rules
-            sections.append({
-                "heading": "3. Invariant Conditions & Correctness Guarantees",
-                "type": "key_value",
-                "items": [
-                    {"key": "Safety Invariant", "value": "All intermediate transitions preserve system determinism."},
-                    {"key": "Termination Guarantee", "value": "Finite step progression guaranteed under bounded resource conditions."},
-                    {"key": "Exception Handling", "value": "Triggers safe rollback or resource wait upon condition violation."}
-                ],
-                "summary": "Rules governing algorithmic soundness and fault tolerance."
-            })
-
-        else: # comparative_analysis
-            comp_headers = ["Comparison Dimension", "Standard Approach / System A", "Alternative Approach / System B", "Practical Impact"]
-            comp_rows = [
-                ["Architecture", "Monolithic / Contiguous Allocation", "Modular / Paged Allocation", "Prevents external fragmentation"],
-                ["Resource Overhead", "Low translation metadata", "Page table / lookup table overhead", "Requires TLB caching to optimize"],
-                ["Fault Recovery", "Manual state checkpointing", "Automated journaling / safe sequences", "Minimizes mean time to recovery"]
-            ]
-            sections.append({
-                "heading": "1. Comparative Analysis Matrix",
-                "type": "table",
-                "table_data": {
-                    "headers": comp_headers,
-                    "rows": comp_rows
-                },
-                "summary": "Side-by-side evaluation across core academic parameters."
-            })
-            sections.append({
-                "heading": "2. Trade-off Analysis & Recommendation",
-                "type": "bullet_points",
-                "points": [
-                    "**Performance Trade-off**: Direct allocation provides slightly lower overhead, whereas structured indexing guarantees flexibility.",
-                    "**Memory Utilization**: Eliminates external memory fragmentation at the expense of minor internal page fragmentation.",
-                    "**Recommendation**: Follow university exam rubric guidelines by selecting the design that balances latency and resource bounds."
-                ],
-                "summary": "Academic takeaway for examination scoring."
-            })
-
-        # Add Examiner's Scoring Takeaways
-        examiner_takeaways = [
-            f"Present all {len(sections)} sections in sequence matching the university evaluation scheme.",
-            "Bold technical terms and highlight equations or state names clearly in written answers.",
-            f"Allocate time proportionally according to the {marks}-mark weighting."
-        ]
 
         structured_result = {
             "schema_version": "2.0",
             "topic": topic,
             "content_type": content_type,
             "domain": domain,
-            "executive_summary": sentences[0] if sentences else f"Academic overview of {topic}.",
-            "key_entities": entities,
+            "executive_summary": (
+                relevant_sentences[0]
+                if relevant_sentences
+                else "Insufficient relevant information was identified in the retrieved PDF context."
+            ),
+            "key_entities": entities[:8],
             "sections": sections,
-            "technical_attributes": technical_attributes,
+            "technical_attributes": {},
             "missing_or_uncertain_fields": missing_fields,
-            "examiner_takeaways": examiner_takeaways
+            "examiner_takeaways": [
+                "Use only technical details supported by the uploaded document.",
+                "Explain each relevant concept clearly in the examination."
+            ],
+            "required_points": target_points,
+            "generated_points": len(relevant_sentences[:target_points])
         }
 
-        # Count total generated points across all sections
-        total_generated = 0
-        for sec in sections:
-            st = sec.get("type")
-            if st == "bullet_points":
-                total_generated += len(sec.get("points", []))
-            elif st == "ordered_steps":
-                total_generated += len(sec.get("steps", []))
-            elif st == "key_value":
-                total_generated += len(sec.get("items", []))
-
-        structured_result["required_points"] = target_points
-        structured_result["generated_points"] = total_generated
-
         return structured_result
+
 
     @classmethod
     def validate_structured_output(cls, data: Dict[str, Any]) -> Tuple[bool, List[str]]:
