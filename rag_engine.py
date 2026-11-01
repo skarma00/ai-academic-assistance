@@ -19,44 +19,93 @@ class AcademicRAGEngine:
         self.use_gemini_embeddings = use_gemini_embeddings
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
 
+    
+    
     def build_index(self, chunks: List[Dict[str, Any]]):
-        """Builds retrieval indices from text chunks."""
-        self.chunks = chunks
-        if not chunks:
-            self.tfidf_vectorizer = None
-            self.tfidf_matrix = None
-            self.dense_embeddings = None
-            return
+       """Build retrieval indices after removing duplicate chunks."""
+    
+       self.chunks = []
+    
+       if not chunks:
+           self.tfidf_vectorizer = None
+           self.tfidf_matrix = None
+           self.dense_embeddings = None
+           return
+    
+       # Remove exact duplicate chunks while preserving page information.
+       seen = set()
+    
+       for chunk in chunks:
+           text = chunk.get("text", "")
+    
+           # Normalize whitespace and case for duplicate detection.
+           normalized_text = re.sub(r"\s+", " ", text).strip().lower()
+    
+           if not normalized_text:
+               continue
+    
+           duplicate_key = (
+               chunk.get("doc_id", ""),
+               chunk.get("source_doc", ""),
+               chunk.get("page", 1),
+               normalized_text
+           )
+    
+           if duplicate_key not in seen:
+               seen.add(duplicate_key)
+               self.chunks.append(chunk)
+    
+       if not self.chunks:
+           self.tfidf_vectorizer = None
+           self.tfidf_matrix = None
+           self.dense_embeddings = None
+           return
+    
+       texts = [c["text"] for c in self.chunks]
+    
+       # Build TF-IDF index.
+       self.tfidf_vectorizer = TfidfVectorizer(
+           ngram_range=(1, 2),
+           stop_words="english",
+           max_df=0.95,
+           min_df=1
+       )
+    
+       self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(texts)
+    
+       # Try Gemini Dense Embeddings if configured.
+       self.dense_embeddings = None
+    
+       if self.use_gemini_embeddings and self.api_key:
+           try:
+               import google.generativeai as genai
+    
+               genai.configure(api_key=self.api_key)
+               dense_vectors = []
+    
+               for i in range(0, len(texts), 20):
+                   batch = texts[i:i + 20]
+    
+                   res = genai.embed_content(
+                       model="models/text-embedding-004",
+                       content=batch,
+                       task_type="retrieval_document"
+                   )
+    
+                   dense_vectors.extend(res["embedding"])
+    
+               self.dense_embeddings = np.array(dense_vectors)
+    
+           except Exception as e:
+               print(f"Gemini embeddings initialization skipped: {e}")
+               self.dense_embeddings = None
+    
+       print(
+           f"RAG Index: {len(chunks)} original chunks, "
+           f"{len(self.chunks)} unique chunks."
+       )
 
-        texts = [c["text"] for c in chunks]
 
-        # 1. Build TF-IDF Semantic Index (fast, zero-failure, offline-ready)
-        self.tfidf_vectorizer = TfidfVectorizer(
-            ngram_range=(1, 2),
-            stop_words='english',
-            max_df=0.95,
-            min_df=1
-        )
-        self.tfidf_matrix = self.tfidf_vectorizer.fit_transform(texts)
-
-        # 2. Try Gemini Dense Embeddings if configured
-        if self.use_gemini_embeddings and self.api_key:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                dense_vectors = []
-                for i in range(0, len(texts), 20):
-                    batch = texts[i:i+20]
-                    res = genai.embed_content(
-                        model="models/text-embedding-004",
-                        content=batch,
-                        task_type="retrieval_document"
-                    )
-                    dense_vectors.extend(res['embedding'])
-                self.dense_embeddings = np.array(dense_vectors)
-            except Exception as e:
-                print(f"Gemini embeddings initialization skipped: {e}")
-                self.dense_embeddings = None
 
     def clear(self):
         """Clears all indexed chunks and cached vectors."""
@@ -120,6 +169,36 @@ class AcademicRAGEngine:
             if float(scores[i]) >= min_score_threshold and float(scores[i]) > 0.0
         ]
 
+        # Filter candidates using similarity score and question-topic overlap
+        query_words = {
+            word.lower()
+            for word in re.findall(r'\b[a-zA-Z]{3,}\b', clean_query)
+        }
+        
+        # Remove common question words that do not identify the topic
+        stop_words = {
+            "define", "explain", "describe", "state", "what",
+            "which", "where", "when", "why", "how", "their",
+            "there", "about", "technique", "primary", "purpose"
+        }
+        
+        topic_words = query_words - stop_words
+        
+        filtered_candidates = []
+        
+        for i in valid_indices:
+            score = float(scores[i])
+            chunk_text = self.chunks[i].get("text", "").lower()
+        
+            if score < min_score_threshold or score <= 0:
+                continue
+        
+            # Check whether the chunk contains at least one topic keyword
+            if topic_words and not any(word in chunk_text for word in topic_words):
+                continue
+        
+            filtered_candidates.append(i)
+        
         if not filtered_candidates:
             return []
 

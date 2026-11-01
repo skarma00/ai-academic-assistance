@@ -55,7 +55,28 @@ class AcademicPDFProcessor:
                     "text": self._clean_text(text)
                 })
             doc.close()
+
             if pages_data:
+                total_chars = sum(len(p["text"]) for p in pages_data)
+                empty_pages = [
+                    p["page_number"]
+                    for p in pages_data
+                    if not p["text"].strip()
+                ]
+            
+                print("\n===== PDF EXTRACTION REPORT =====")
+                print("Total pages:", len(pages_data))
+                print("Total extracted characters:", total_chars)
+                print("Empty pages:", empty_pages)
+            
+                for p in pages_data:
+                    print(
+                        f"Page {p['page_number']}: "
+                        f"{len(p['text'])} characters"
+                    )
+            
+                print("=================================\n")
+            
                 return pages_data
         except ImportError:
             pass
@@ -102,14 +123,22 @@ class AcademicPDFProcessor:
         """Cleans artifacts, hyphenated line wraps, and irregular spacing."""
         if not text:
             return ""
-        # Remove hyphenated linebreaks (e.g. compu-\nter -> computer)
-        text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', text)
-        # Replace multiple newlines with double newline
-        text = re.sub(r'\n{3,}', '\n\n', text)
+    
+        # Join words split by hyphens at line breaks
+        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+    
         # Normalize non-breaking spaces
         text = text.replace('\xa0', ' ')
-        # Remove repeated horizontal whitespaces
+    
+        # Normalize line endings
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+    
+        # Remove excessive blank lines
+        text = re.sub(r'\n{3,}', '\n\n', text)
+    
+        # Remove repeated spaces and tabs without removing line breaks
         text = re.sub(r'[ \t]+', ' ', text)
+    
         return text.strip()
 
     def detect_sections(self, text: str) -> List[str]:
@@ -128,81 +157,181 @@ class AcademicPDFProcessor:
                     break
         return headings
 
-    def create_chunks(self, pages_data: List[Dict[str, Any]], source_doc: str, doc_id: Optional[str] = None) -> List[PDFChunk]:
+    def create_chunks(
+    self,
+    pages_data: List[Dict[str, Any]],
+    source_doc: str,
+    doc_id: Optional[str] = None
+) -> List[PDFChunk]:
         """
-        Segments page texts into academic chunks with overlap,
-        preserving page numbers and section context.
+        Creates topic-aware chunks while preserving page numbers,
+        section headings, and overlap.
         """
+    
         if not doc_id:
             import hashlib
-            doc_id = hashlib.sha256(source_doc.encode("utf-8")).hexdigest()[:12]
-
+            doc_id = hashlib.sha256(
+                source_doc.encode("utf-8")
+            ).hexdigest()[:12]
+    
         all_chunks = []
         chunk_counter = 1
-
-        for p_info in pages_data:
-            page_num = p_info["page_number"]
-            page_text = p_info["text"]
-            if not page_text or len(page_text.strip()) < 15:
-                continue
-
-            # Split into paragraphs first to avoid cutting sentences mid-way
-            paragraphs = page_text.split("\n\n")
-            current_buffer = ""
-
-            for para in paragraphs:
-                para = para.strip()
-                if not para:
-                    continue
-
-                if len(current_buffer) + len(para) + 2 <= self.chunk_size:
-                    current_buffer = f"{current_buffer}\n\n{para}".strip()
-                else:
-                    if current_buffer:
-                        chunk = PDFChunk(
-                            text=current_buffer,
-                            page=page_num,
-                            chunk_id=chunk_counter,
-                            source_doc=source_doc,
-                            doc_id=doc_id
-                        )
-                        all_chunks.append(chunk)
-                        chunk_counter += 1
-
-                    # If the paragraph itself exceeds chunk_size, split by sentences/fixed size
-                    if len(para) > self.chunk_size:
-                        sentences = re.split(r'(?<=[.?!])\s+', para)
-                        sub_buffer = ""
-                        for sent in sentences:
-                            if len(sub_buffer) + len(sent) + 1 <= self.chunk_size:
-                                sub_buffer = f"{sub_buffer} {sent}".strip()
-                            else:
-                                if sub_buffer:
-                                    chunk = PDFChunk(
-                                        text=sub_buffer,
-                                        page=page_num,
-                                        chunk_id=chunk_counter,
-                                        source_doc=source_doc,
-                                        doc_id=doc_id
-                                    )
-                                    all_chunks.append(chunk)
-                                    chunk_counter += 1
-                                sub_buffer = sent
-                        current_buffer = sub_buffer
-                    else:
-                        current_buffer = para
-
-            if current_buffer:
-                chunk = PDFChunk(
-                    text=current_buffer,
+        current_section = "General Content"
+    
+        # Recognize common academic headings
+        heading_pattern = re.compile(
+        r'^(?:'
+        r'(?:UNIT|MODULE|CHAPTER)\s+[\dIVX]+(?:\s*[:\-].*)?'
+        r'|(?:\d+(?:\.\d+)*\.?)\s+[A-Z][A-Za-z\s\-()&,]{2,}'
+        r'|(?:Brute Force Technique|Selection Sort|Bubble Sort'
+        r'|Sequential Search|Brute-Force String Matching'
+        r'|Divide-and-Conquer Technique|Master Theorem'
+        r'|Mergesort|Mergesort Algorithm|Quicksort'
+        r'|Quicksort Algorithm|Binary Search'
+        r'|Analysis of .+|QuickSort .+)'
+        r')$',
+        re.IGNORECASE
+    )
+    
+        def save_chunk(text, page_num, section):
+            nonlocal chunk_counter
+    
+            text = text.strip()
+            if len(text) < 15:
+                return
+    
+            all_chunks.append(
+                PDFChunk(
+                    text=text,
                     page=page_num,
                     chunk_id=chunk_counter,
                     source_doc=source_doc,
-                    doc_id=doc_id
+                    doc_id=doc_id,
+                    section=section
                 )
-                all_chunks.append(chunk)
-                chunk_counter += 1
-
+            )
+            chunk_counter += 1
+    
+        for p_info in pages_data:
+            page_num = p_info["page_number"]
+            page_text = p_info["text"]
+    
+            if not page_text or len(page_text.strip()) < 15:
+                continue
+    
+            lines = [
+                line.strip()
+                for line in page_text.splitlines()
+                if line.strip()
+            ]
+    
+            current_buffer = ""
+    
+            for line in lines:
+    
+                # Detect a standalone heading
+                is_heading = (
+                    len(line) < 80
+                    and heading_pattern.match(line) is not None
+                )
+    
+                if is_heading:
+                    if current_buffer:
+                        save_chunk(
+                            current_buffer,
+                            page_num,
+                            current_section
+                        )
+                        current_buffer = ""
+    
+                    current_section = line
+                    continue
+    
+                # Split long lines into sentences
+                sentences = re.split(
+                    r'(?<=[.!?])\s+',
+                    line
+                )
+    
+                for sentence in sentences:
+                    sentence = sentence.strip()
+    
+                    if not sentence:
+                        continue
+    
+                    if len(sentence) > self.chunk_size:
+                        # Split exceptionally long sentences safely
+                        if current_buffer:
+                            save_chunk(
+                                current_buffer,
+                                page_num,
+                                current_section
+                            )
+                            current_buffer = ""
+    
+                        for start in range(
+                            0,
+                            len(sentence),
+                            self.chunk_size - self.chunk_overlap
+                        ):
+                            piece = sentence[
+                                start:start + self.chunk_size
+                            ]
+    
+                            save_chunk(
+                                piece,
+                                page_num,
+                                current_section
+                            )
+    
+                        continue
+    
+                    if (
+                        len(current_buffer) + len(sentence) + 1
+                        <= self.chunk_size
+                    ):
+                        current_buffer = (
+                            f"{current_buffer} {sentence}".strip()
+                        )
+                    else:
+                        previous_buffer = current_buffer
+    
+                        save_chunk(
+                            previous_buffer,
+                            page_num,
+                            current_section
+                        )
+    
+                        # Carry the ending of the previous chunk forward
+                        overlap = previous_buffer[
+                            -self.chunk_overlap:
+                        ]
+    
+                        current_buffer = (
+                            f"{overlap} {sentence}".strip()
+                        )
+    
+            if current_buffer:
+                save_chunk(
+                    current_buffer,
+                    page_num,
+                    current_section
+                )
+    
+        print("\n===== CHUNK CREATION REPORT =====")
+        print("Total chunks created:", len(all_chunks))
+    
+        for chunk in all_chunks:
+            print(
+                f"\nChunk {chunk.chunk_id} | "
+                f"Page {chunk.page} | "
+                f"Section: {chunk.section} | "
+                f"Characters: {len(chunk.text)}"
+            )
+            print(chunk.text[:500])
+    
+        print("=================================\n")
+    
         return all_chunks
 
     def process_file(self, file_path: str, source_doc: Optional[str] = None, doc_id: Optional[str] = None) -> Dict[str, Any]:
